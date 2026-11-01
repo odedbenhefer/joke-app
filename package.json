@@ -1,0 +1,7 @@
+{
+  "name": "joke-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "בדיחה בלחיצה - אפליקציית בדיחות בעברית (OpenAI + Vercel)",
+  "engines": { "node": ">=20" }
+}
