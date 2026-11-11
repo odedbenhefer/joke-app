@@ -127,3 +127,5 @@ body{
 .login-error{margin:0; padding:10px 12px; font-size:14px; font-weight:700; color:#9b2315; background:#ffe2dd; border:2px solid #f2b3aa; border-radius:12px}
 .login-info{margin:0; padding:10px 12px; font-size:14px; font-weight:700; color:#0d6b57; background:#dcf5ee; border:2px solid #9fdcca; border-radius:12px}
 .login-error[hidden],.login-info[hidden]{display:none}
+.locked[hidden]{display:none}
+[hidden]{display:none !important}
