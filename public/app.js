@@ -8,6 +8,7 @@
 
   function loadSession() {
     try { session = JSON.parse(localStorage.getItem(STORE)); } catch (e) { session = null; }
+    if (session && session.access_token) session.name = jwtName(session.access_token);
   }
   function saveSession(s) {
     session = s;
@@ -15,12 +16,17 @@
       if (s) localStorage.setItem(STORE, JSON.stringify(s)); else localStorage.removeItem(STORE);
     } catch (e) {}
   }
-  function jwtEmail(tokenValue) {
+  // JWT payload is base64url JSON in UTF-8 (Hebrew names): decode bytes, not Latin-1.
+  function jwtPayload(tokenValue) {
     try {
-      var p = tokenValue.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      return JSON.parse(atob(p)).email || '';
-    } catch (e) { return ''; }
+      var b = tokenValue.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (b.length % 4) b += "=";
+      var bin = atob(b);
+      var bytes = Uint8Array.from(bin, function (c) { return c.charCodeAt(0); });
+      return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    } catch (e) { return {}; }
   }
+  function jwtEmail(tokenValue) { return jwtPayload(tokenValue).email || ""; }
   function readHash() {
     var h = location.hash.replace(/^#/, '');
     if (h.indexOf('access_token=') === -1) return;
@@ -72,11 +78,7 @@
   var mode = 'login';
 
   function jwtName(tokenValue) {
-    try {
-      var p = tokenValue.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      var meta = JSON.parse(atob(p)).user_metadata || {};
-      return meta.name || '';
-    } catch (e) { return ''; }
+    return (jwtPayload(tokenValue).user_metadata || {}).name || '';
   }
   function sessionFromTokens(d) {
     saveSession({
