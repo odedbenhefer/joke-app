@@ -121,6 +121,7 @@
   // ---------- views ----------
   var views = ['joke', 'community', 'mine'];
   function showView(name) {
+    syncSession();
     views.forEach(function (v) { $('view-' + v).hidden = v !== name; });
     document.querySelectorAll('.nav-btn').forEach(function (b) {
       b.classList.toggle('on', b.dataset.view === name);
@@ -323,7 +324,7 @@
     api('/api/mine')
       .then(function (res) { return res.ok ? res.json() : { jokes: [] }; })
       .then(function (d) {
-        renderList($('mine-list'), d.jokes, false);
+        renderList($('mine-list'), d.jokes, true);
         $('mine-empty').hidden = d.jokes.length > 0;
       })
       .catch(function () {});
@@ -344,6 +345,20 @@
   });
 
   // ---------- start ----------
+  // The magic link opens in a new tab and saves the session there: pick it up in every open tab.
+  function syncSession() {
+    var was = loggedIn();
+    loadSession();
+    if (was !== loggedIn()) {
+      renderAuth();
+      if (loggedIn() && loginDlg.open) loginDlg.close();
+      if (!$('view-mine').hidden) loadMine();
+    }
+  }
+  window.addEventListener('storage', function (e) { if (e.key === STORE) syncSession(); });
+  window.addEventListener('focus', syncSession);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) syncSession(); });
+
   loadSession();
   readHash();
   renderAuth();
