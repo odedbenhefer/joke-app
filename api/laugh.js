@@ -1,5 +1,6 @@
 // POST /api/laugh  { joke, topic, sig }  ->  { laughs }
 const { verify } = require('../lib/sign');
+const { headers } = require('../lib/supabase');
 
 const hits = new Map();
 function isLimited(ip) {
@@ -32,11 +33,7 @@ module.exports = async function handler(req, res) {
   try {
     const r = await fetch(process.env.SUPABASE_URL + '/rest/v1/rpc/laugh', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY,
-      },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers()),
       body: JSON.stringify({ p_joke: joke, p_topic: topic }),
     });
     if (!r.ok) throw new Error('Supabase ' + r.status + ' ' + (await r.text()).slice(0, 300));
