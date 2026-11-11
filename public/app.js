@@ -26,11 +26,10 @@
     if (h.indexOf('access_token=') === -1) return;
     var q = new URLSearchParams(h);
     if (q.get('access_token')) {
-      saveSession({
+      sessionFromTokens({
         access_token: q.get('access_token'),
         refresh_token: q.get('refresh_token'),
-        expires_at: Math.floor(Date.now() / 1000) + (parseInt(q.get('expires_in'), 10) || 3600),
-        email: jwtEmail(q.get('access_token'))
+        expires_in: parseInt(q.get('expires_in'), 10) || 3600
       });
     }
     history.replaceState(null, '', location.pathname + location.search);
@@ -45,12 +44,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || !d.access_token) { saveSession(null); return null; }
-        saveSession({
-          access_token: d.access_token,
-          refresh_token: d.refresh_token,
-          expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600),
-          email: jwtEmail(d.access_token)
-        });
+        sessionFromTokens(d);
         return session.access_token;
       })
       .catch(function () { return null; });
@@ -73,35 +67,117 @@
   }
   function loggedIn() { return Boolean(session); }
 
-  // ---------- login dialog ----------
+  // ---------- login dialog (email + password, or magic link) ----------
   var loginDlg = $('login');
-  function openLogin() {
-    $('login-text').textContent = 'נשלח לכם קישור למייל, בלי סיסמה.';
+  var mode = 'login';
+
+  function jwtName(tokenValue) {
+    try {
+      var p = tokenValue.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      var meta = JSON.parse(atob(p)).user_metadata || {};
+      return meta.name || '';
+    } catch (e) { return ''; }
+  }
+  function sessionFromTokens(d) {
+    saveSession({
+      access_token: d.access_token,
+      refresh_token: d.refresh_token,
+      expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600),
+      email: jwtEmail(d.access_token),
+      name: jwtName(d.access_token)
+    });
+  }
+  function loginMsg(kind, text) {
+    $('login-error').hidden = kind !== 'error';
+    $('login-info').hidden = kind !== 'info';
+    if (kind === 'error') $('login-error').textContent = text;
+    if (kind === 'info') $('login-info').textContent = text;
+  }
+  function setMode(m) {
+    mode = m;
+    var reg = m === 'register';
+    $('mode-login').classList.toggle('on', !reg);
+    $('mode-register').classList.toggle('on', reg);
+    $('mode-login').setAttribute('aria-selected', reg ? 'false' : 'true');
+    $('mode-register').setAttribute('aria-selected', reg ? 'true' : 'false');
+    $('login-title').textContent = reg ? 'הרשמה' : 'כניסה';
+    $('login-send').textContent = reg ? 'הרשמה' : 'כניסה';
+    $('name').hidden = !reg;
+    $('name-label').hidden = !reg;
+    $('password').autocomplete = reg ? 'new-password' : 'current-password';
+    loginMsg('none');
+  }
+  function openLogin(startMode) {
+    setMode(startMode || 'login');
     $('login-send').disabled = false;
     if (loginDlg.showModal) loginDlg.showModal(); else loginDlg.setAttribute('open', '');
     $('email').focus();
   }
+  $('mode-login').addEventListener('click', function () { setMode('login'); });
+  $('mode-register').addEventListener('click', function () { setMode('register'); });
   $('login-close').addEventListener('click', function () { loginDlg.close(); });
+
+  function authPost(path, body) {
+    return fetch(CFG.supabaseUrl + '/auth/v1' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
+    });
+  }
+  function finishLogin() {
+    renderAuth();
+    loginDlg.close();
+    resetVotes();
+    if (!$('view-mine').hidden) loadMine();
+  }
+
   $('login-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var email = $('email').value.trim();
-    if (!email) return;
+    var password = $('password').value;
+    if (!email || !password) return;
+    loginMsg('none');
     $('login-send').disabled = true;
-    fetch(CFG.supabaseUrl + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey },
-      body: JSON.stringify({ email: email, create_user: true })
-    })
+
+    var request;
+    if (mode === 'register') {
+      var name = $('name').value.trim().slice(0, 30);
+      request = authPost('/signup', { email: email, password: password, data: { name: name } })
+        .then(function (r) {
+          if (r.ok && r.data.access_token) { sessionFromTokens(r.data); finishLogin(); return; }
+          if (r.ok) { loginMsg('info', 'שלחנו מייל לאישור. לחצו על הקישור שבו ואז היכנסו.'); return; }
+          var code = r.data.error_code || r.data.code || '';
+          if (code === 'user_already_exists') loginMsg('error', 'המייל הזה כבר רשום. נסו להיכנס.');
+          else if (code === 'weak_password') loginMsg('error', 'הסיסמה צריכה להיות לפחות 6 תווים.');
+          else if (r.status === 429) loginMsg('error', 'יותר מדי ניסיונות. נסו שוב בעוד דקה.');
+          else loginMsg('error', 'ההרשמה נכשלה. בדקו את הפרטים ונסו שוב.');
+        });
+    } else {
+      request = authPost('/token?grant_type=password', { email: email, password: password })
+        .then(function (r) {
+          if (r.ok && r.data.access_token) { sessionFromTokens(r.data); finishLogin(); return; }
+          if (r.status === 429) loginMsg('error', 'יותר מדי ניסיונות. נסו שוב בעוד דקה.');
+          else if (r.status === 400) loginMsg('error', 'המייל או הסיסמה לא נכונים.');
+          else loginMsg('error', 'משהו השתבש. נסו שוב.');
+        });
+    }
+    request
+      .catch(function () { loginMsg('error', 'משהו השתבש. נסו שוב.'); })
+      .then(function () { $('login-send').disabled = false; });
+  });
+
+  $('magic').addEventListener('click', function () {
+    var email = $('email').value.trim();
+    if (!email) { loginMsg('error', 'כתבו את המייל למעלה ואז לחצו שוב.'); $('email').focus(); return; }
+    loginMsg('none');
+    authPost('/otp?redirect_to=' + encodeURIComponent(location.origin + '/'), { email: email, create_user: true })
       .then(function (r) {
-        $('login-text').textContent = r.ok
-          ? 'שלחנו קישור למייל. לחצו עליו כדי להיכנס.'
-          : 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.';
-        $('login-send').disabled = r.ok;
+        if (r.ok) loginMsg('info', 'שלחנו קישור למייל. לחצו עליו כדי להיכנס.');
+        else loginMsg('error', 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.');
       })
-      .catch(function () {
-        $('login-text').textContent = 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.';
-        $('login-send').disabled = false;
-      });
+      .catch(function () { loginMsg('error', 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.'); });
   });
   $('auth-btn').addEventListener('click', function () {
     if (!loggedIn()) { openLogin(); return; }
@@ -115,7 +191,7 @@
   function renderAuth() {
     var btn = $('auth-btn');
     btn.classList.toggle('in', loggedIn());
-    btn.textContent = loggedIn() ? 'נכנס ✓' : 'כניסה';
+    btn.textContent = loggedIn() ? 'נכנס ✓' + (session.name ? ' · ' + session.name : '') : 'כניסה';
   }
 
   // ---------- views ----------
@@ -329,7 +405,7 @@
       })
       .catch(function () {});
   }
-  $('mine-login').addEventListener('click', openLogin);
+  $('mine-login').addEventListener('click', function () { openLogin('login'); });
 
   $('delete-account').addEventListener('click', function () {
     if (!confirm('למחוק את החשבון שלך לצמיתות? הסימונים שלך יימחקו.')) return;

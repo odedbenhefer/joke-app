@@ -136,12 +136,25 @@
 </nav>
 
 <dialog id="login" class="login">
-<form id="login-form" method="dialog" class="login-form" autocomplete="on">
-<h2>כניסה לבדיחה בלחיצה</h2>
-<p id="login-text" class="text">נשלח לכם קישור למייל, בלי סיסמה.</p>
-<input id="email" type="email" required placeholder="המייל שלכם" dir="ltr" autocomplete="email">
-<button id="login-send" class="cta" type="submit">שלחו לי קישור</button>
-<button id="login-close" class="link" type="button">סגירה</button>
+<div class="login-head">
+<h2 id="login-title">כניסה</h2>
+<button id="login-close" class="x" type="button" aria-label="סגירה">×</button>
+</div>
+<div class="seg" role="tablist">
+<button id="mode-login" class="seg-btn on" type="button" role="tab" aria-selected="true">כניסה</button>
+<button id="mode-register" class="seg-btn" type="button" role="tab" aria-selected="false">הרשמה</button>
+</div>
+<form id="login-form" class="login-form" autocomplete="on">
+<label id="name-label" for="name" hidden>איך קוראים לך?</label>
+<input id="name" type="text" maxlength="30" placeholder="למשל: גושה" autocomplete="nickname" hidden>
+<label for="email">מייל</label>
+<input id="email" type="email" required placeholder="name@example.com" dir="ltr" autocomplete="email">
+<label for="password">סיסמה</label>
+<input id="password" type="password" required minlength="6" placeholder="לפחות 6 תווים" autocomplete="current-password">
+<p id="login-error" class="login-error" role="alert" hidden></p>
+<p id="login-info" class="login-info" hidden></p>
+<button id="login-send" class="cta" type="submit">כניסה</button>
+<button id="magic" class="link" type="button">או: שלחו לי קישור כניסה למייל</button>
 </form>
 </dialog>
 
