@@ -1,11 +1,178 @@
 (function () {
-  var form = document.getElementById('form');
-  var input = document.getElementById('topic');
-  var button = document.getElementById('go');
+  var CFG = window.APP_CONFIG;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- auth (Supabase magic link, plain REST) ----------
+  var STORE = 'jb_session';
+  var session = null;
+
+  function loadSession() {
+    try { session = JSON.parse(localStorage.getItem(STORE)); } catch (e) { session = null; }
+  }
+  function saveSession(s) {
+    session = s;
+    try {
+      if (s) localStorage.setItem(STORE, JSON.stringify(s)); else localStorage.removeItem(STORE);
+    } catch (e) {}
+  }
+  function jwtEmail(tokenValue) {
+    try {
+      var p = tokenValue.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(p)).email || '';
+    } catch (e) { return ''; }
+  }
+  function readHash() {
+    var h = location.hash.replace(/^#/, '');
+    if (h.indexOf('access_token=') === -1) return;
+    var q = new URLSearchParams(h);
+    if (q.get('access_token')) {
+      saveSession({
+        access_token: q.get('access_token'),
+        refresh_token: q.get('refresh_token'),
+        expires_at: Math.floor(Date.now() / 1000) + (parseInt(q.get('expires_in'), 10) || 3600),
+        email: jwtEmail(q.get('access_token'))
+      });
+    }
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  function refresh() {
+    if (!session || !session.refresh_token) { saveSession(null); return Promise.resolve(null); }
+    return fetch(CFG.supabaseUrl + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.access_token) { saveSession(null); return null; }
+        saveSession({
+          access_token: d.access_token,
+          refresh_token: d.refresh_token,
+          expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600),
+          email: jwtEmail(d.access_token)
+        });
+        return session.access_token;
+      })
+      .catch(function () { return null; });
+  }
+  function token() {
+    if (!session) return Promise.resolve(null);
+    if (session.expires_at - 60 > Date.now() / 1000) return Promise.resolve(session.access_token);
+    return refresh();
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    return token().then(function (t) {
+      opts.headers = Object.assign({}, opts.headers || {});
+      if (t) opts.headers.Authorization = 'Bearer ' + t;
+      return fetch(path, opts);
+    }).then(function (res) {
+      if (res.status === 401 && session) { saveSession(null); renderAuth(); }
+      return res;
+    });
+  }
+  function loggedIn() { return Boolean(session); }
+
+  // ---------- login dialog ----------
+  var loginDlg = $('login');
+  function openLogin() {
+    $('login-text').textContent = 'נשלח לכם קישור למייל, בלי סיסמה.';
+    $('login-send').disabled = false;
+    if (loginDlg.showModal) loginDlg.showModal(); else loginDlg.setAttribute('open', '');
+    $('email').focus();
+  }
+  $('login-close').addEventListener('click', function () { loginDlg.close(); });
+  $('login-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = $('email').value.trim();
+    if (!email) return;
+    $('login-send').disabled = true;
+    fetch(CFG.supabaseUrl + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey },
+      body: JSON.stringify({ email: email, create_user: true })
+    })
+      .then(function (r) {
+        $('login-text').textContent = r.ok
+          ? 'שלחנו קישור למייל. לחצו עליו כדי להיכנס.'
+          : 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.';
+        $('login-send').disabled = r.ok;
+      })
+      .catch(function () {
+        $('login-text').textContent = 'לא הצלחנו לשלוח. נסו שוב בעוד דקה.';
+        $('login-send').disabled = false;
+      });
+  });
+  $('auth-btn').addEventListener('click', function () {
+    if (!loggedIn()) { openLogin(); return; }
+    if (confirm('להתנתק מ-' + (session.email || 'החשבון') + '?')) {
+      saveSession(null);
+      renderAuth();
+      showView('joke');
+      resetVotes();
+    }
+  });
+  function renderAuth() {
+    var btn = $('auth-btn');
+    btn.classList.toggle('in', loggedIn());
+    btn.textContent = loggedIn() ? 'נכנס ✓' : 'כניסה';
+  }
+
+  // ---------- views ----------
+  var views = ['joke', 'community', 'mine'];
+  function showView(name) {
+    views.forEach(function (v) { $('view-' + v).hidden = v !== name; });
+    document.querySelectorAll('.nav-btn').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.view === name);
+    });
+    if (name === 'community') loadCommunity();
+    if (name === 'mine') loadMine();
+  }
+  document.querySelectorAll('.nav-btn').forEach(function (b) {
+    b.addEventListener('click', function () { showView(b.dataset.view); });
+  });
+
+  // ---------- voting ----------
+  function setVoteUI(likeButton, dislikeButton, likes, dislikes, my) {
+    likeButton.querySelector('b').textContent = likes;
+    dislikeButton.querySelector('b').textContent = dislikes;
+    likeButton.setAttribute('aria-pressed', my === 1 ? 'true' : 'false');
+    dislikeButton.setAttribute('aria-pressed', my === -1 ? 'true' : 'false');
+  }
+
+  // clicked: 1 (like) or -1 (dislike). Pressing the same button again removes the vote.
+  function castVote(item, clicked, likeButton, dislikeButton) {
+    if (!loggedIn()) { openLogin(); return; }
+    var value = item.my === clicked ? 0 : clicked;
+    likeButton.disabled = dislikeButton.disabled = true;
+    api('/api/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ joke: item.joke, sig: item.sig, topic: item.topic || '', value: value })
+    })
+      .then(function (res) {
+        if (res.status === 401) { openLogin(); throw new Error('login'); }
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.json();
+      })
+      .then(function (d) {
+        item.my = d.my; item.likes = d.likes; item.dislikes = d.dislikes;
+        setVoteUI(likeButton, dislikeButton, d.likes, d.dislikes, d.my);
+      })
+      .catch(function () {})
+      .then(function () { likeButton.disabled = dislikeButton.disabled = false; });
+  }
+
+  // ---------- joke view ----------
+  var form = $('form');
+  var input = $('topic');
+  var button = $('go');
   var panels = document.querySelectorAll('#card .panel');
-  var chip = document.getElementById('chip');
-  var jokeEl = document.getElementById('joke');
-  var errorText = document.getElementById('error-text');
+  var chip = $('chip');
+  var jokeEl = $('joke');
+  var errorText = $('error-text');
+  var likeBtn = $('like');
+  var dislikeBtn = $('dislike');
 
   var LABEL_DEFAULT = 'תנו לי בדיחה!';
   var LABEL_AGAIN = 'עוד אחת!';
@@ -13,16 +180,12 @@
   var MSG_ERROR = 'משהו השתבש, נסו שוב';
   var MSG_RATE = 'רגע, יותר מדי בדיחות.\nנסו שוב בעוד דקה';
 
-  var laughBtn = document.getElementById('laugh');
-  var topSection = document.getElementById('top');
-  var topList = document.getElementById('top-list');
-  var current = null;
   var hasJoke = false;
+  var current = null;
 
   function show(name) {
     panels.forEach(function (p) { p.hidden = p.dataset.state !== name; });
   }
-
   function setBusy(busy) {
     button.disabled = busy;
     if (busy) {
@@ -33,11 +196,16 @@
       button.textContent = hasJoke ? LABEL_AGAIN : LABEL_DEFAULT;
     }
   }
-
   function showError(message) {
     errorText.textContent = message;
     errorText.style.whiteSpace = 'pre-line';
     show('error');
+  }
+  function resetVotes() {
+    if (current) {
+      current.my = 0;
+      setVoteUI(likeBtn, dislikeBtn, current.likes || 0, current.dislikes || 0, 0);
+    }
   }
 
   form.addEventListener('submit', function (event) {
@@ -66,10 +234,9 @@
         if (!data || !data.joke) throw new Error('empty');
         jokeEl.textContent = data.joke;
         chip.textContent = topic ? 'בדיחה על ' + topic : 'בדיחה כללית';
+        current = { joke: data.joke, sig: data.sig, topic: topic, likes: 0, dislikes: 0, my: 0 };
+        setVoteUI(likeBtn, dislikeBtn, 0, 0, 0);
         hasJoke = true;
-        current = { joke: data.joke, sig: data.sig, topic: topic };
-        laughBtn.disabled = false;
-        laughBtn.textContent = 'צחקתי 😂';
         show('result');
       })
       .catch(function (err) {
@@ -81,47 +248,103 @@
       });
   });
 
-  function loadTop() {
-    fetch('/api/top')
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) {
-        if (!data || !data.jokes || !data.jokes.length) { topSection.hidden = true; return; }
-        topList.textContent = '';
-        data.jokes.forEach(function (row) {
-          var li = document.createElement('li');
-          var text = document.createElement('div');
-          text.className = 'tj';
-          text.textContent = row.joke;
-          var count = document.createElement('span');
-          count.className = 'tc';
-          count.textContent = row.laughs + ' צחקו';
-          li.appendChild(text);
-          li.appendChild(count);
-          topList.appendChild(li);
-        });
-        topSection.hidden = false;
+  likeBtn.addEventListener('click', function () {
+    if (current) castVote(current, 1, likeBtn, dislikeBtn);
+  });
+  dislikeBtn.addEventListener('click', function () {
+    if (current) castVote(current, -1, likeBtn, dislikeBtn);
+  });
+
+  // ---------- lists (community / mine) ----------
+  function renderList(listEl, items, withDislike) {
+    listEl.textContent = '';
+    items.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'item';
+      var p = document.createElement('p');
+      p.className = 'joke';
+      p.textContent = item.joke;
+      li.appendChild(p);
+      if (item.topic) {
+        var c = document.createElement('span');
+        c.className = 'chip';
+        c.textContent = 'על ' + item.topic;
+        li.appendChild(c);
+      }
+      var votes = document.createElement('div');
+      votes.className = 'votes';
+      var lb = document.createElement('button');
+      lb.type = 'button';
+      lb.className = 'vote vote-like';
+      lb.appendChild(document.createTextNode('אהבתי 👍 '));
+      lb.appendChild(document.createElement('b'));
+      var db = document.createElement('button');
+      db.type = 'button';
+      db.className = 'vote vote-dislike';
+      db.appendChild(document.createTextNode('לא אהבתי 👎 '));
+      db.appendChild(document.createElement('b'));
+      setVoteUI(lb, db, item.likes, item.dislikes, item.my || 0);
+      lb.addEventListener('click', function () { castVote(item, 1, lb, db); });
+      db.addEventListener('click', function () { castVote(item, -1, lb, db); });
+      votes.appendChild(lb);
+      if (withDislike) votes.appendChild(db);
+      li.appendChild(votes);
+      listEl.appendChild(li);
+    });
+  }
+
+  var sort = 'top';
+  function setSort(s) {
+    sort = s;
+    $('tab-top').classList.toggle('on', s === 'top');
+    $('tab-new').classList.toggle('on', s === 'new');
+    $('tab-top').setAttribute('aria-selected', s === 'top' ? 'true' : 'false');
+    $('tab-new').setAttribute('aria-selected', s === 'new' ? 'true' : 'false');
+    loadCommunity();
+  }
+  $('tab-top').addEventListener('click', function () { setSort('top'); });
+  $('tab-new').addEventListener('click', function () { setSort('new'); });
+
+  function loadCommunity() {
+    api('/api/community?sort=' + sort)
+      .then(function (res) { return res.ok ? res.json() : { jokes: [] }; })
+      .then(function (d) {
+        renderList($('community-list'), d.jokes, true);
+        $('community-empty').hidden = d.jokes.length > 0;
       })
       .catch(function () {});
   }
 
-  laughBtn.addEventListener('click', function () {
-    if (!current || laughBtn.disabled) return;
-    laughBtn.disabled = true;
-    laughBtn.textContent = 'נרשם ✓';
-    fetch('/api/laugh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(current)
-    })
+  function loadMine() {
+    var open = loggedIn();
+    $('mine-locked').hidden = open;
+    $('mine-open').hidden = !open;
+    if (!open) return;
+    api('/api/mine')
+      .then(function (res) { return res.ok ? res.json() : { jokes: [] }; })
+      .then(function (d) {
+        renderList($('mine-list'), d.jokes, false);
+        $('mine-empty').hidden = d.jokes.length > 0;
+      })
+      .catch(function () {});
+  }
+  $('mine-login').addEventListener('click', openLogin);
+
+  $('delete-account').addEventListener('click', function () {
+    if (!confirm('למחוק את החשבון שלך לצמיתות? הסימונים שלך יימחקו.')) return;
+    api('/api/account', { method: 'DELETE' })
       .then(function (res) {
         if (!res.ok) throw new Error('http ' + res.status);
-        loadTop();
+        saveSession(null);
+        renderAuth();
+        resetVotes();
+        showView('joke');
       })
-      .catch(function () {
-        laughBtn.disabled = false;
-        laughBtn.textContent = 'לא נשמר, נסו שוב';
-      });
+      .catch(function () { alert('המחיקה נכשלה, נסו שוב.'); });
   });
 
-  loadTop();
+  // ---------- start ----------
+  loadSession();
+  readHash();
+  renderAuth();
 })();

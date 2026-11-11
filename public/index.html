@@ -13,6 +13,10 @@
 <body>
 <main class="app">
 
+<div class="topbar"><button id="auth-btn" class="auth-btn" type="button">כניסה</button></div>
+
+<section id="view-joke" class="view">
+
 <svg class="decor" aria-hidden="true" width="390" height="260" viewBox="0 0 390 260">
 <path d="M68 30 L73 44 L87 49 L73 54 L68 68 L63 54 L49 49 L63 44 Z" fill="#8a4bff" stroke="#1f1a3d" stroke-width="2.5" stroke-linejoin="round"/>
 <path d="M330 40 v22 M319 51 h22" stroke="#8a4bff" stroke-width="5" stroke-linecap="round"/>
@@ -77,7 +81,10 @@
 </svg>
 </div>
 <p id="joke" class="joke"></p>
-<button id="laugh" class="laugh" type="button">צחקתי 😂</button>
+<div class="votes" data-for="joke">
+<button id="like" class="vote vote-like" type="button" aria-pressed="false">אהבתי 👍 <b id="like-n">0</b></button>
+<button id="dislike" class="vote vote-dislike" type="button" aria-pressed="false">לא אהבתי 👎 <b id="dislike-n">0</b></button>
+</div>
 </div>
 
 <div data-state="error" class="panel" role="alert" hidden>
@@ -94,12 +101,52 @@
 </div>
 
 </section>
-
-<section id="top" class="top" hidden>
-<h2>הכי מצחיקות</h2>
-<ol id="top-list"></ol>
 </section>
+
+<section id="view-community" class="view" hidden>
+<h2 class="view-title">הקהילה</h2>
+<p class="view-sub">בדיחות שאנשים סימנו, מדורגות לפי אהבתי.</p>
+<div class="tabs" role="tablist">
+<button id="tab-top" class="tab on" type="button" role="tab" aria-selected="true">הכי מצחיקות</button>
+<button id="tab-new" class="tab" type="button" role="tab" aria-selected="false">חדשות</button>
+</div>
+<ol id="community-list" class="list"></ol>
+<p id="community-empty" class="view-sub" hidden>עוד אין בדיחות. היו הראשונים לסמן אהבתי!</p>
+</section>
+
+<section id="view-mine" class="view" hidden>
+<h2 class="view-title">אהבתי</h2>
+<div id="mine-locked" class="locked" hidden>
+<p class="text strong">🔒 המסך הזה נעול</p>
+<p class="text">התחברו כדי לראות את הבדיחות שאהבתם.</p>
+<button id="mine-login" class="cta" type="button">כניסה</button>
+</div>
+<div id="mine-open" hidden>
+<p class="view-sub">כל הבדיחות שאהבת, רק שלך.</p>
+<ol id="mine-list" class="list"></ol>
+<p id="mine-empty" class="view-sub" hidden>עוד לא סימנת אהבתי לאף בדיחה.</p>
+<button id="delete-account" class="danger" type="button">מחיקת חשבון</button>
+</div>
+</section>
+
+<nav class="nav" aria-label="ניווט">
+<button class="nav-btn on" data-view="joke" type="button">😂<span>בדיחה</span></button>
+<button class="nav-btn" data-view="community" type="button">👥<span>הקהילה</span></button>
+<button class="nav-btn" data-view="mine" type="button">♡<span>אהבתי</span></button>
+</nav>
+
+<dialog id="login" class="login">
+<form id="login-form" method="dialog" class="login-form" autocomplete="on">
+<h2>כניסה לבדיחה בלחיצה</h2>
+<p id="login-text" class="text">נשלח לכם קישור למייל, בלי סיסמה.</p>
+<input id="email" type="email" required placeholder="המייל שלכם" dir="ltr" autocomplete="email">
+<button id="login-send" class="cta" type="submit">שלחו לי קישור</button>
+<button id="login-close" class="link" type="button">סגירה</button>
+</form>
+</dialog>
+
 </main>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
