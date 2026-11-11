@@ -13,6 +13,10 @@
   var MSG_ERROR = 'משהו השתבש, נסו שוב';
   var MSG_RATE = 'רגע, יותר מדי בדיחות.\nנסו שוב בעוד דקה';
 
+  var laughBtn = document.getElementById('laugh');
+  var topSection = document.getElementById('top');
+  var topList = document.getElementById('top-list');
+  var current = null;
   var hasJoke = false;
 
   function show(name) {
@@ -63,6 +67,9 @@
         jokeEl.textContent = data.joke;
         chip.textContent = topic ? 'בדיחה על ' + topic : 'בדיחה כללית';
         hasJoke = true;
+        current = { joke: data.joke, sig: data.sig, topic: topic };
+        laughBtn.disabled = false;
+        laughBtn.textContent = 'צחקתי 😂';
         show('result');
       })
       .catch(function (err) {
@@ -73,4 +80,48 @@
         setBusy(false);
       });
   });
+
+  function loadTop() {
+    fetch('/api/top')
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.jokes || !data.jokes.length) { topSection.hidden = true; return; }
+        topList.textContent = '';
+        data.jokes.forEach(function (row) {
+          var li = document.createElement('li');
+          var text = document.createElement('div');
+          text.className = 'tj';
+          text.textContent = row.joke;
+          var count = document.createElement('span');
+          count.className = 'tc';
+          count.textContent = row.laughs + ' צחקו';
+          li.appendChild(text);
+          li.appendChild(count);
+          topList.appendChild(li);
+        });
+        topSection.hidden = false;
+      })
+      .catch(function () {});
+  }
+
+  laughBtn.addEventListener('click', function () {
+    if (!current || laughBtn.disabled) return;
+    laughBtn.disabled = true;
+    laughBtn.textContent = 'נרשם ✓';
+    fetch('/api/laugh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(current)
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('http ' + res.status);
+        loadTop();
+      })
+      .catch(function () {
+        laughBtn.disabled = false;
+        laughBtn.textContent = 'לא נשמר, נסו שוב';
+      });
+  });
+
+  loadTop();
 })();

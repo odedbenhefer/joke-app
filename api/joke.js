@@ -1,6 +1,8 @@
 // Vercel Serverless Function: POST /api/joke  { "topic": "חתולים" }  ->  { "joke": "..." }
 // The OpenAI key lives only in the OPENAI_API_KEY environment variable on Vercel.
 
+const { sign } = require('../lib/sign');
+
 const MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 const MAX_TOPIC = 40;
 
@@ -91,7 +93,7 @@ module.exports = async function handler(req, res) {
     // The model declined or returned nothing for this topic: fall back to a general joke.
     if (!joke && topic) joke = await askOpenAI('');
     if (!joke) return res.status(502).json({ error: 'empty_joke' });
-    return res.status(200).json({ joke });
+    return res.status(200).json({ joke, sig: sign(joke) });
   } catch (error) {
     console.error(error);
     return res.status(502).json({ error: 'upstream_error' });
