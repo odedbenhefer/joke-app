@@ -125,7 +125,6 @@
 <p class="view-sub">כל הבדיחות שאהבת, רק שלך.</p>
 <ol id="mine-list" class="list"></ol>
 <p id="mine-empty" class="view-sub" hidden>עוד לא סימנת אהבתי לאף בדיחה.</p>
-<button id="delete-account" class="danger" type="button">מחיקת חשבון</button>
 </div>
 </section>
 
@@ -156,6 +155,18 @@
 <button id="login-send" class="cta" type="submit">כניסה</button>
 <button id="magic" class="link" type="button">או: שלחו לי קישור כניסה למייל</button>
 </form>
+</dialog>
+
+<dialog id="account" class="login">
+<div class="login-head">
+<h2 id="account-name">החשבון שלי</h2>
+<button id="account-close" class="x" type="button" aria-label="סגירה">×</button>
+</div>
+<p id="account-email" class="text" dir="ltr"></p>
+<div class="login-form">
+<button id="logout" class="cta" type="button">התנתקות</button>
+<button id="delete-account" class="danger" type="button">מחיקת חשבון</button>
+</div>
 </dialog>
 
 </main>

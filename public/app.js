@@ -183,12 +183,18 @@
   });
   $('auth-btn').addEventListener('click', function () {
     if (!loggedIn()) { openLogin(); return; }
-    if (confirm('להתנתק מ-' + (session.email || 'החשבון') + '?')) {
-      saveSession(null);
-      renderAuth();
-      showView('joke');
-      resetVotes();
-    }
+    $('account-name').textContent = session.name || 'החשבון שלי';
+    $('account-email').textContent = session.email || '';
+    var dlg = $('account');
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  });
+  $('account-close').addEventListener('click', function () { $('account').close(); });
+  $('logout').addEventListener('click', function () {
+    saveSession(null);
+    renderAuth();
+    resetVotes();
+    $('account').close();
+    showView('joke');
   });
   function renderAuth() {
     var btn = $('auth-btn');
@@ -419,6 +425,7 @@
         saveSession(null);
         renderAuth();
         resetVotes();
+        $('account').close();
         showView('joke');
       })
       .catch(function () { alert('המחיקה נכשלה, נסו שוב.'); });
