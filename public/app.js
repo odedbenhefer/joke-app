@@ -193,7 +193,9 @@
   function renderAuth() {
     var btn = $('auth-btn');
     btn.classList.toggle('in', loggedIn());
-    btn.textContent = loggedIn() ? 'נכנס ✓' + (session.name ? ' · ' + session.name : '') : 'כניסה';
+    // Signed in: show the user's name (or the start of their email if they have no name).
+    var label = loggedIn() ? (session.name || (session.email || '').split('@')[0] || 'נכנס ✓') : 'כניסה';
+    btn.textContent = label;
   }
 
   // ---------- views ----------
